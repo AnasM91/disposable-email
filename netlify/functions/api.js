@@ -1,6 +1,7 @@
 const express = require('express');
 const serverless = require('serverless-http');
 const cors = require('cors');
+const { emails } = require('./smtp-handler');
 
 const app = express();
 
@@ -9,9 +10,6 @@ app.use(cors());
 
 // Parse JSON bodies
 app.use(express.json());
-
-// In-memory storage
-let emails = [];
 
 // Debug middleware
 app.use((req, res, next) => {
@@ -42,7 +40,7 @@ router.get('/emails/:prefix', (req, res) => {
     }
 });
 
-// Create a new email
+// Create a new email (for testing)
 router.post('/emails/:prefix', (req, res) => {
     try {
         const { from, subject, body, senderIP } = req.body;
@@ -75,7 +73,10 @@ router.delete('/emails/:prefix', (req, res) => {
     try {
         const prefix = req.params.prefix;
         console.log('Deleting emails for prefix:', prefix);
-        emails = emails.filter(email => email.emailPrefix !== prefix);
+        const index = emails.findIndex(email => email.emailPrefix === prefix);
+        if (index !== -1) {
+            emails.splice(index, 1);
+        }
         res.status(204).send();
     } catch (error) {
         console.error('Error deleting emails:', error);
@@ -91,8 +92,6 @@ router.get('/', (req, res) => {
 // Use the router with the base path
 app.use('/.netlify/functions/api', router);
 
-// Create handler
-const handler = serverless(app);
-
-// Export handler
-module.exports = { handler };
+// Export the serverless app
+module.exports = app;
+module.exports.handler = serverless(app);

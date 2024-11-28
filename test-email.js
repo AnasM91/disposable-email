@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const API_URL = 'http://localhost:8888';
+const API_URL = 'https://disposable-emails.netlify.app/.netlify/functions/api';
 const TEST_EMAIL_PREFIX = 'test123';
 
 async function runTest() {
@@ -17,12 +17,13 @@ async function runTest() {
         console.log('2. Sending test email...');
         const testEmail = {
             from: 'test@example.com',
-            subject: `Test Email with Image`,
+            subject: `Test Email with Image - ${new Date().toLocaleString()}`,
             body: `
                 <div style="font-family: Arial, sans-serif;">
                     <h2>Test Email with Image</h2>
-                    <p>This is a test email with an embedded image.</p>
+                    <p>This is a test email sent to your production deployment at ${new Date().toLocaleString()}</p>
                     <img src="https://picsum.photos/300/200" alt="Random Image">
+                    <p>If you can see this email and the image above, your deployment is working correctly!</p>
                 </div>
             `,
             senderIP: '127.0.0.1'
@@ -38,6 +39,9 @@ async function runTest() {
 
     } catch (error) {
         console.error('Test failed:', error.message);
+        if (error.response) {
+            console.error('Error details:', error.response.data);
+        }
     }
 }
 
