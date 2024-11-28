@@ -1,10 +1,10 @@
 const express = require('express');
-const serverless = require('serverless-http');
 const cors = require('cors');
 
 const app = express();
+const port = 8888;
 
-// Enable CORS for all routes
+// Enable CORS
 app.use(cors());
 
 // Parse JSON bodies
@@ -19,17 +19,14 @@ app.use((req, res, next) => {
     next();
 });
 
-// Base path for all routes
-const router = express.Router();
-
 // Health check endpoint
-router.get('/health', (req, res) => {
+app.get('/health', (req, res) => {
     console.log('Health check endpoint called');
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // Get emails for a prefix
-router.get('/emails/:prefix', (req, res) => {
+app.get('/emails/:prefix', (req, res) => {
     try {
         const prefix = req.params.prefix;
         console.log('Getting emails for prefix:', prefix);
@@ -43,7 +40,7 @@ router.get('/emails/:prefix', (req, res) => {
 });
 
 // Create a new email
-router.post('/emails/:prefix', (req, res) => {
+app.post('/emails/:prefix', (req, res) => {
     try {
         const { from, subject, body, senderIP } = req.body;
         const emailPrefix = req.params.prefix;
@@ -71,7 +68,7 @@ router.post('/emails/:prefix', (req, res) => {
 });
 
 // Delete emails for a prefix
-router.delete('/emails/:prefix', (req, res) => {
+app.delete('/emails/:prefix', (req, res) => {
     try {
         const prefix = req.params.prefix;
         console.log('Deleting emails for prefix:', prefix);
@@ -83,16 +80,7 @@ router.delete('/emails/:prefix', (req, res) => {
     }
 });
 
-// Handle root path
-router.get('/', (req, res) => {
-    res.json({ message: 'API is running' });
+// Start server
+app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
 });
-
-// Use the router with the base path
-app.use('/.netlify/functions/api', router);
-
-// Create handler
-const handler = serverless(app);
-
-// Export handler
-module.exports = { handler };

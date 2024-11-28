@@ -1,235 +1,131 @@
-import React, { useState, useEffect } from 'react';
-import io from 'socket.io-client';
+import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 import {
-  Box,
-  VStack,
-  HStack,
-  Text,
-  IconButton,
-  List,
-  ListItem,
-  useToast,
-  Divider
+    Box,
+    VStack,
+    HStack,
+    Text,
+    IconButton,
+    List,
+    ListItem,
+    useToast,
+    Badge,
+    Heading
 } from '@chakra-ui/react';
 import { DeleteIcon } from '@chakra-ui/icons';
-import axios from 'axios';
-
-const socket = io(process.env.REACT_APP_WS_URL || 'http://localhost:5001', {
-    reconnectionAttempts: 5,
-    reconnectionDelay: 1000,
-    transports: ['websocket', 'polling']
-});
+import { formatDistanceToNow } from 'date-fns';
 
 function Inbox({ emailPrefix }) {
     const [emails, setEmails] = useState([]);
     const [selectedEmail, setSelectedEmail] = useState(null);
-    const [isConnected, setIsConnected] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
     const toast = useToast();
 
-    useEffect(() => {
-        // Socket connection status
-        socket.on('connect', () => {
-            setIsConnected(true);
+    // Function to fetch emails - wrapped in useCallback
+    const fetchEmails = useCallback(async () => {
+        if (!emailPrefix) return;
+        
+        setLoading(true);
+        try {
+            const apiUrl = `${process.env.REACT_APP_API_URL}/emails/${emailPrefix}`;
+            console.log('Fetching from:', apiUrl);
+            const response = await axios.get(apiUrl);
+            console.log('Fetched emails:', response.data);
+            setEmails(response.data || []);
+            setError(null);
+        } catch (error) {
+            console.error('Error fetching emails:', error);
             toast({
-                title: "Connected to server",
-                status: "success",
-                duration: 2000,
-                isClosable: true,
-            });
-        });
-
-        socket.on('connect_error', (error) => {
-            console.error('Socket connection error:', error);
-            setIsConnected(false);
-            toast({
-                title: "Connection error",
-                description: "Unable to connect to the server. Please try again later.",
-                status: "error",
+                title: 'Error fetching emails',
+                description: error.message,
+                status: 'error',
                 duration: 5000,
                 isClosable: true,
             });
-        });
+        } finally {
+            setLoading(false);
+        }
+    }, [emailPrefix, toast]);
 
-        return () => {
-            socket.off('connect');
-            socket.off('connect_error');
-        };
-    }, [toast]);
-
+    // Set up polling
     useEffect(() => {
         if (!emailPrefix) return;
 
-        console.log('Loading emails for prefix:', emailPrefix);
-
-        // Fetch initial emails
-        const fetchEmails = async () => {
-            try {
-                const response = await axios.get(`${process.env.REACT_APP_API_URL || 'http://localhost:5001'}/api/emails/${emailPrefix}`);
-                console.log('Fetched emails:', response.data);
-                setEmails(response.data);
-            } catch (error) {
-                console.error('Error fetching emails:', error);
-                toast({
-                    title: "Error fetching emails",
-                    description: error.response?.status === 511 ? "Network authentication required. Please try again later." : "Failed to fetch emails",
-                    status: "error",
-                    duration: 5000,
-                    isClosable: true,
-                });
-            }
-        };
+        // Initial fetch
         fetchEmails();
 
-        // Subscribe to email prefix
-        socket.emit('subscribe', emailPrefix);
+        // Set up polling interval
+        const intervalId = setInterval(fetchEmails, 10000);
 
-        // Handle new emails
-        socket.on('newEmail', (newEmail) => {
-            console.log('Received new email:', newEmail);
-            setEmails(prevEmails => [newEmail, ...prevEmails]);
-            toast({
-                title: "New email received",
-                status: "info",
-                duration: 3000,
-                isClosable: true,
-            });
-        });
+        // Cleanup
+        return () => clearInterval(intervalId);
+    }, [emailPrefix, fetchEmails]);
 
-        return () => {
-            socket.emit('unsubscribe', emailPrefix);
-            socket.off('newEmail');
-        };
-    }, [emailPrefix, toast]);
+    const handleEmailClick = (email) => {
+        setSelectedEmail(email);
+    };
 
-    const handleDelete = async (id) => {
+    const formatTimeAgo = (date) => {
         try {
-            await axios.delete(`${process.env.REACT_APP_API_URL || 'http://localhost:5001'}/api/emails/${id}`);
-            setEmails(prevEmails => prevEmails.filter(email => email.id !== id));
-            if (selectedEmail && selectedEmail.id === id) {
-                setSelectedEmail(null);
-            }
-            toast({
-                title: "Email deleted",
-                status: "success",
-                duration: 3000,
-                isClosable: true,
-            });
+            return formatDistanceToNow(new Date(date), { addSuffix: true });
         } catch (error) {
-            console.error('Error deleting email:', error);
-            toast({
-                title: "Error deleting email",
-                status: "error",
-                duration: 3000,
-                isClosable: true,
-            });
+            console.error('Error formatting date:', error);
+            return 'Unknown time';
         }
     };
 
     return (
-        <HStack align="stretch" spacing={4} h="100%">
-            {/* Email List */}
-            <Box w="300px" borderWidth="1px" borderRadius="lg" overflow="hidden">
-                <List spacing={0}>
-                    {emails.map((email) => (
-                        <ListItem
-                            key={email.id}
-                            p={3}
-                            cursor="pointer"
-                            bg={selectedEmail?.id === email.id ? "gray.100" : "white"}
-                            _hover={{ bg: "gray.50" }}
-                            onClick={() => setSelectedEmail(email)}
-                        >
-                            <HStack justify="space-between">
-                                <VStack align="start" flex={1}>
-                                    <Text fontWeight="bold" noOfLines={1}>
-                                        {email.fromAddress}
-                                    </Text>
-                                    <Text fontSize="sm" color="gray.600" noOfLines={1}>
-                                        {email.subject || '(No subject)'}
-                                    </Text>
-                                </VStack>
-                                <IconButton
-                                    icon={<DeleteIcon />}
-                                    size="sm"
-                                    variant="ghost"
-                                    colorScheme="red"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleDelete(email.id);
-                                    }}
-                                />
-                            </HStack>
-                        </ListItem>
-                    ))}
-                    {emails.length === 0 && (
-                        <ListItem p={4}>
-                            <Text color="gray.500" textAlign="center">
-                                No emails yet
-                            </Text>
-                        </ListItem>
-                    )}
-                </List>
-            </Box>
+        <Box p={4} borderWidth="1px" borderRadius="lg">
+            <VStack spacing={4} align="stretch">
+                <Box>
+                    <Heading size="md" mb={2}>Inbox for: {emailPrefix}</Heading>
+                    <Text fontSize="sm" color="gray.500">
+                        Refreshes automatically every 10 seconds
+                    </Text>
+                </Box>
 
-            {/* Email Content */}
-            <Box flex={1} borderWidth="1px" borderRadius="lg" p={4}>
-                {selectedEmail ? (
-                    <VStack spacing={4} align="stretch" width="100%">
-                        {/* Email Header */}
-                        <Box 
-                            p={4} 
-                            bg="white" 
-                            borderRadius="md" 
-                            boxShadow="sm"
-                        >
-                            <Text fontSize="sm" color="gray.500" mb={1}>
-                                From: {selectedEmail.fromAddress}
-                            </Text>
-                            <Text fontSize="xl" fontWeight="bold" mb={2}>
-                                {selectedEmail.subject}
-                            </Text>
-                        </Box>
-
-                        {/* Email Content */}
-                        <Box 
-                            p={6} 
-                            bg="white" 
-                            borderRadius="md" 
-                            boxShadow="sm"
-                            className="email-content"
-                        >
-                            <Box 
-                                dangerouslySetInnerHTML={{ __html: selectedEmail.body }} 
-                                sx={{
-                                    'img, svg': {
-                                        display: 'inline-block',
-                                        maxWidth: '100%',
-                                        height: 'auto',
-                                        border: '1px solid #eee',
-                                        borderRadius: '4px',
-                                        padding: '4px',
-                                        margin: '8px 0',
-                                        backgroundColor: 'white'
-                                    },
-                                    'h1, h2, h3, h4, h5, h6': {
-                                        lineHeight: '1.2',
-                                        margin: '1em 0 0.5em'
-                                    },
-                                    'p': { margin: '0.5em 0' },
-                                    'ul, ol': { margin: '0.5em 0 0.5em 1.5em' },
-                                    'a': {
-                                        color: 'blue.500',
-                                        textDecoration: 'underline'
-                                    }
-                                }}
-                            />
-                        </Box>
-                    </VStack>
+                {emails.length === 0 ? (
+                    <Text color="gray.500">No emails yet. Waiting for new messages...</Text>
                 ) : (
-                    <Text color="gray.500">Select an email to view its contents</Text>
+                    <List spacing={3}>
+                        {emails.map((email) => (
+                            <ListItem 
+                                key={email.id}
+                                p={3}
+                                borderWidth="1px"
+                                borderRadius="md"
+                                cursor="pointer"
+                                onClick={() => handleEmailClick(email)}
+                                bg={selectedEmail?.id === email.id ? "gray.50" : "white"}
+                                _hover={{ bg: "gray.50" }}
+                            >
+                                <VStack align="stretch" spacing={2}>
+                                    <HStack justify="space-between">
+                                        <Text fontWeight="bold" color="blue.600">
+                                            From: {email.fromAddress}
+                                        </Text>
+                                        <Badge colorScheme="green">
+                                            {formatTimeAgo(email.receivedAt)}
+                                        </Badge>
+                                    </HStack>
+                                    <Text fontWeight="medium">{email.subject}</Text>
+                                    {selectedEmail?.id === email.id && (
+                                        <Box 
+                                            mt={2} 
+                                            p={3} 
+                                            borderWidth="1px" 
+                                            borderRadius="md"
+                                            dangerouslySetInnerHTML={{ __html: email.body }}
+                                        />
+                                    )}
+                                </VStack>
+                            </ListItem>
+                        ))}
+                    </List>
                 )}
-            </Box>
-        </HStack>
+            </VStack>
+        </Box>
     );
 }
 
